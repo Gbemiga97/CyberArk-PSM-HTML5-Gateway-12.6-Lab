@@ -1,145 +1,154 @@
 ## What I Did
 
-### 1. Installed VMware and Created Ubuntu Linux VM (Beginner-Friendly)
+### 1. Prepared the Virtual Machine and Installed Red Hat Linux 7.x
 
-If you don't have VMware or Linux experience, start here.
+Downloaded the RHEL 7.x ISO from the Red Hat Customer Portal (requires a developer subscription—free for non-production use). Created a new VM in VMware with at least 2 GB RAM, 2 vCPUs, and 20+ GB disk space.
 
-1. Download and install **VMware Workstation Player** (free for personal use) or Workstation Pro from Broadcom/VMware site.
-2. Download **Ubuntu 22.04 LTS Desktop ISO** from ubuntu.com.
-3. Open VMware → Create a New Virtual Machine.
-   - Select "Typical" → Choose the Ubuntu ISO.
-   - Name it e.g., "CyberArk-HTML5-Gateway-Lab".
-   - Allocate: **4-8 GB RAM**, **2-4 vCPUs**, **20-40 GB disk** (thin provisioned).
-   - Finish and power on.
-4. Follow the Ubuntu installer: Choose English, install Ubuntu, create a user (e.g., `labuser` with sudo), and complete setup.
-5. After login, update the system:
-   ```
-   sudo apt update && sudo apt upgrade -y
-   sudo apt install net-tools curl -y
-   ```
-6. Install VMware Tools for better performance (copy-paste, shared folders): In VMware menu → VM → Install VMware Tools, then follow on-screen instructions in Ubuntu.
+Booted from the ISO and followed the graphical installer:
+- Selected language and keyboard.
+- Configured partitioning (automatic for simplicity).
+- Set a strong root password and created a regular user with sudo privileges.
+- Completed the installation and rebooted.
 
-*Screenshot idea: VMware console showing Ubuntu desktop after install.*
-
----
-
-### 2. Prepared the Linux Host for HTML5 Gateway
-
-1. Install Docker (recommended for isolation and simplicity):
-   ```
-   sudo apt install docker.io docker-compose -y
-   sudo systemctl enable --now docker
-   sudo usermod -aG docker $USER  # Log out and back in
-   ```
-2. Verify: `docker --version` and `docker run hello-world`.
-3. (Optional but recommended) Install utilities:
-   ```
-   sudo apt install openssl -y
-   ```
-
----
-
-### 3. Downloaded and Installed CyberArk HTML5 Gateway 12.6 (Docker Method)
-
-**Note**: Obtain the `HTML5 Gateway-Rls-12.6.x.zip` from the CyberArk Marketplace. Copy the `PSMGWDocker` directory to your Linux VM (e.g., via shared folder or SCP).
-
-1. Navigate to the extracted `PSMGWDocker` directory.
-2. Make the setup script executable:
-   ```
-   chmod +x html5_console.sh
-   ```
-3. Run the installation (use `-f` if conflicts):
-   ```
-   sudo ./html5_console.sh install -l
-   ```
-4. Create a certificates directory:
-   ```
-   sudo mkdir -p /opt/cert
-   ```
-
----
-
-### 4. Generated Self-Signed Certificates (For Lab/Testing)
-
-**Warning**: Self-signed certs are for testing only. Use proper CA-signed certs in production.
-
-Run these commands (adjust names/FQDN as needed, e.g., `html5gw.lab.local`):
-
+**Post-install basics (run as root or with `sudo`)**:
 ```bash
-cd /opt/cert
+# Update the system
+sudo yum update -y
 
-# Root CA
-sudo openssl genrsa -out rootCA.key 4096
-sudo openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 365 -out rootCA.crt
+# Install essential tools
+sudo yum install -y vim curl wget net-tools
 
-# Gateway cert
-sudo openssl genrsa -out psmgw.key 2048
-sudo openssl req -new -key psmgw.key -out psmgw.csr
-sudo openssl x509 -req -in psmgw.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -out psmgw.crt -days 365 -sha256
+# Verify network and hostname
+hostnamectl
+ip addr show
 ```
 
-Copy necessary files (PSM/PVWA CA certs if available) into `/opt/cert`.
+*Screenshot description: RHEL 7 desktop/login screen after fresh install, showing successful boot and network connectivity.*
 
 ---
 
-### 5. Launched the HTML5 Gateway Container
+### 2. Installed and Configured Docker on RHEL 7.x
 
-Use a command similar to this (adapt for your version/PVWA):
+RHEL 7 uses `yum` for package management.
 
 ```bash
-sudo ./html5_console.sh run -ti -p 443:8443 \
-  -v /opt/cert:/opt/import:ro -d \
+# Install prerequisites
+sudo yum install -y yum-utils device-mapper-persistent-data lvm2
+
+# Add Docker repository (using CentOS repo as common workaround for RHEL 7 Docker CE)
+sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+# Install Docker
+sudo yum install -y docker-ce docker-ce-cli containerd.io
+
+# Start and enable Docker
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# Add your user to docker group (log out/in after)
+sudo usermod -aG docker $USER
+
+# Verify
+docker --version
+docker ps
+```
+
+*Screenshot description: Terminal showing Docker service running and `docker version` output.*
+
+**Note**: If you encounter repository or subscription issues, ensure your RHEL subscription is active and repositories are enabled (`sudo subscription-manager repos --enable=rhel-7-server-extras-rpms` etc.).
+
+---
+
+### 3. Prepared the HTML5 Gateway Files and Installed the Container
+
+Copied the PSMGWDocker directory (from your 12.6 installation media/resources) to the Linux host (e.g., via SCP, WinSCP, or shared folder).
+
+Navigated to the directory:
+
+```bash
+cd /path/to/PSMGWDocker
+chmod +x html5_installation.sh
+sudo ./html5_installation.sh localimage
+```
+
+This imports the Docker image (e.g., `cahtml5gw:<version_tag>`). Check with `docker images`.
+
+Created a certificates directory:
+
+```bash
+sudo mkdir -p /opt/cert
+```
+
+For lab use, generated self-signed certificates using OpenSSL (place required .crt/.key files in `/opt/cert` and adjust ownership/permissions as needed).
+
+---
+
+### 4. Launched the PSM HTML5 Gateway Docker Container
+
+Ran the container with appropriate options for testing (adjust `<PVWA URL>`, hostname, and version tag):
+
+```bash
+sudo docker run --restart unless-stopped -ti -p 443:8443 \
+  -v /opt/cert:/opt/import:ro \
+  -d --cap-drop=all --cap-add={CHOWN,DAC_OVERRIDE,FOWNER,SETGID,SETUID} \
   -e AcceptCyberArkEULA=yes \
-  -e EndPointAddress=https://your-pvwa.example.com/passwordvault \
-  -e GWCert=psmgw.crt \
-  -e GWKey=psmgw.key \
-  -e GWCAFile=rootCA.crt \
-  --name html5gw-lab \
-  cahtml5gw:12.6_tag  # Replace with actual image tag from docker images
+  -e EndPointAddress=https://<your-pvwa-hostname-or-ip>/passwordvault \
+  --hostname <your-gateway-fqdn-or-name> \
+  --name <your-gateway-name> cahtml5gw:<version_tag>
 ```
 
-Verify: `docker ps` and check logs with `docker logs html5gw-lab`.
+Verified the container is running: `docker ps`.
 
-*Screenshot: Docker container running, browser accessing https://<VM-IP> showing gateway interface.*
-
----
-
-### 6. Configured Firewall and Tested Basic Access
-
+Opened port 443 in the VM's firewall if needed:
 ```bash
-sudo ufw allow 443/tcp
-sudo ufw enable
+sudo firewall-cmd --permanent --add-port=443/tcp
+sudo firewall-cmd --reload
 ```
 
-- From your host machine's browser, access `https://<VM-IP-or-FQDN>` (accept self-signed warning).
-- In CyberArk PVWA (if available): Add/configure the PSM HTML5 Gateway server under Administration → PSM → HTML5 Gateway, then test a connection to a target account.
+*Screenshot description: `docker ps` output showing the running HTML5 Gateway container, and browser accessing https://gateway-ip (noting any self-signed cert warning for lab).*
 
 ---
 
-### 7. (Optional) Basic Hardening and Verification
+### 5. Configured Integration in PVWA/PSM
 
-- Review CyberArk hardening scripts in the package.
-- Check services: `docker ps`, `systemctl status docker`.
-- Test an end-to-end privileged session via browser.
+In the PVWA:
+- Added/configured the PSM HTML5 Gateway server (using the gateway's address/hostname).
+- Updated connection components or account settings to enable HTML5 sessions.
+- Tested an RDP/SSH session via the HTML5 interface in the browser.
+
+*Screenshot description: PVWA interface showing the added HTML5 Gateway and a successful browser-based session to a target system.*
+
+---
+
+### 6. Basic Hardening and Verification
+
+Checked logs:
+```bash
+docker logs <container-name>
+```
+
+Tested connectivity, certificate trust (accepted warnings in lab), and session functionality.
 
 ## Key Takeaways
 
-- **Virtualization Basics** — Comfortable creating and managing Linux VMs in VMware for lab environments.
-- **Linux Fundamentals** — Package management (`apt`), permissions, services, and Docker on Ubuntu.
-- **Containerized Deployment** — Using Docker for isolated, reproducible PAM components like HTML5 Gateway.
-- **Certificate Management** — Importance of TLS for secure gateways and basic OpenSSL usage.
-- **PAM Concepts** — Understanding HTML5 Gateway's role in browser-based secure access, JWT validation, and integration with PVWA/PSM.
-- **Security Practices** — Least privilege, proper cert handling, and why production setups differ from labs (e.g., no self-signed certs).
-- **Troubleshooting** — Common issues like port conflicts, cert validation, and container logs.
+- **Linux Fundamentals** — Comfortable with RHEL 7 installation, basic commands (`yum`, `systemctl`, file permissions), and Docker management.
+- **Containerized Deployment** — Learned to run and manage the HTML5 Gateway as a Docker container, including volume mounts for certificates.
+- **CyberArk Integration** — Understood how the HTML5 Gateway fits into PAM for browser-based privileged access.
+- **Certificate Handling** — Practical experience with self-signed certs for testing (use proper CA-signed certs in production).
+- **Troubleshooting** — Firewall, ports, logs, and common beginner pitfalls like permissions or network config.
+
+This project builds strong foundational skills in Linux, containers, and PAM administration.
 
 ## About
 
-A hands-on PAM infrastructure project deploying CyberArk PSM HTML5 Gateway 12.6 on Ubuntu Linux in VMware. Focuses on beginner accessibility while covering real-world privileged access management scenarios.
+A hands-on beginner project for installing and configuring the CyberArk PSM HTML5 Gateway on Red Hat Enterprise Linux 7.x with Docker. Perfect for those new to Linux seeking practical PAM experience.
 
-### Resources
-- Official CyberArk Docs: Search for "Install PSM HTML5 Gateway" (Docker method preferred for this version).
-- VMware/Ubuntu guides for setup.
-- CyberArk Marketplace for the 12.6 package.
+**Notes**: 
+- Adapt paths, hostnames, IPs, and version tags to your environment.
+- For production, follow official security and certificate best practices.
+- Use snapshots in your VM for easy resets during learning.
+
+Feel free to extend this lab with load balancing, upgrades, or additional testing!
 
 **Next Steps Ideas**: Integrate with a full CyberArk lab (PVWA + PSM), add load balancing simulation, or upgrade the gateway. Expand with Ansible for automation.
 
