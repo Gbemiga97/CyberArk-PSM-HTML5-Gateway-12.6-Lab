@@ -75,7 +75,7 @@ Navigated to the directory:
 ```bash
 cd /path/to/PSMGWDocker
 chmod +x html5_installation.sh
-sudo ./html5_installation.sh localimage
+sudo ./html5_installation.sh -l -f localimage
 ```
 
 This imports the Docker image (e.g., `cahtml5gw:<version_tag>`). Check with `docker images`.
