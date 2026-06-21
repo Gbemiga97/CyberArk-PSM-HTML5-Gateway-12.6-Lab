@@ -12,6 +12,13 @@ Booted from the ISO and followed the graphical installer:
 
 **Post-install basics (run as root or with `sudo`)**:
 ```bash
+#Register your RHEL system** (most important step). You will be prompted for your **Red Hat Developer account** username and password (the same one you used to download the ISO).
+sudo subscription-manager register --auto-attach
+
+#Enable required repositories**
+sudo subscription-manager repos --enable=rhel-7-server-extras-rpms
+sudo subscription-manager repos --enable=rhel-7-server-optional-rpms
+
 # Update the system
 sudo yum update -y
 
@@ -142,14 +149,3 @@ This project builds strong foundational skills in Linux, containers, and PAM adm
 ## About
 
 A hands-on beginner project for installing and configuring the CyberArk PSM HTML5 Gateway on Red Hat Enterprise Linux 7.x with Docker. Perfect for those new to Linux seeking practical PAM experience.
-
-**Notes**: 
-- Adapt paths, hostnames, IPs, and version tags to your environment.
-- For production, follow official security and certificate best practices.
-- Use snapshots in your VM for easy resets during learning.
-
-Feel free to extend this lab with load balancing, upgrades, or additional testing!
-
-**Next Steps Ideas**: Integrate with a full CyberArk lab (PVWA + PSM), add load balancing simulation, or upgrade the gateway. Expand with Ansible for automation.
-
-You can clone/fork this structure into a GitHub repo (add your screenshots to an `img/` folder). Replace placeholders with your actual screenshots and adjust version-specific details once you download the exact 12.6 package. Let me know if you need scripts, more detailed commands, or help generating image placeholders!
